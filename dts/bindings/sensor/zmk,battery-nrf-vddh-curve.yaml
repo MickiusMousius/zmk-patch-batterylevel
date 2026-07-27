@@ -1,0 +1,25 @@
+# Copyright (c) 2021 The ZMK Contributors
+# SPDX-License-Identifier: MIT
+
+description: |
+  Battery SoC monitoring using a voltage divider, converting voltage
+  to percent through a LiPo discharge-curve lookup.
+
+compatible: "zmk,battery-voltage-divider-curve"
+
+include: sensor-device.yaml
+
+properties:
+  io-channels:
+    required: true
+    description: ADC channel for the battery voltage
+
+  output-ohms:
+    type: int
+    required: true
+    description: Resistance of the lower leg of the voltage divider
+
+  full-ohms:
+    type: int
+    required: true
+    description: Total resistance of the voltage divider
