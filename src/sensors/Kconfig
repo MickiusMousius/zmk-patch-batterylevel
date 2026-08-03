@@ -1,4 +1,12 @@
+DT_COMPAT_ZMK_BATTERY_NRF_VDDH_CURVE := zmk,battery-nrf-vddh-curve
 DT_COMPAT_ZMK_BATTERY_VOLTAGE_DIVIDER_CURVE := zmk,battery-voltage-divider-curve
+
+config ZMK_BATTERY_NRF_VDDH_CURVE
+    bool
+    default $(dt_has_compat,$(DT_COMPAT_ZMK_BATTERY_NRF_VDDH_CURVE))
+    select ADC
+    select ZMK_BATTERY
+    depends on SENSOR
 
 config ZMK_BATTERY_VOLTAGE_DIVIDER_CURVE
     bool
