@@ -1,10 +1,19 @@
 /*
  * Copyright (c) 2021 The ZMK Contributors
  * SPDX-License-Identifier: MIT
+ *
+ * @file battery_voltage_divider_curve.c
+ * @brief Battery sensor driver for external voltage divider circuits.
+ * @details Reads the battery voltage through a standard resistor divider connected to an ADC pin. It scales the raw ADC
+ * reading using the configured resistor values to calculate the actual millivolts, filters noise using a median of
+ * multiple samples, and calculates the final state of charge.
  */
 
 #define DT_DRV_COMPAT zmk_battery_voltage_divider_curve
 
+/* ========================================================================= */
+/*                        INCLUDES AND DEPENDENCIES                          */
+/* ========================================================================= */
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/adc.h>
@@ -14,52 +23,53 @@
 
 #include "battery_curve_common.h"
 
+/* ========================================================================= */
+/*                            STATE AND GLOBALS                              */
+/* ========================================================================= */
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #define BATT_SAMPLES (3)
 
-struct io_channel_config
-{
+struct io_channel_config {
     uint8_t channel;
 };
 
-struct bvdc_config
-{
+
+struct bvdc_config {
     struct io_channel_config io_channel;
     uint32_t output_ohm;
     uint32_t full_ohm;
 };
 
-struct bvdc_data
-{
+
+struct bvdc_data {
     const struct device *adc;
     struct adc_channel_cfg acc;
     struct adc_sequence as;
     struct battery_curve_value value;
 };
 
-static int bvdc_sample_fetch(const struct device *dev, enum sensor_channel chan)
-{
+
+/* ========================================================================= */
+/*                               ADC FETCHING                                */
+/* ========================================================================= */
+static int bvdc_sample_fetch(const struct device *dev, enum sensor_channel chan) {
     struct bvdc_data *drv_data = dev->data;
     const struct bvdc_config *drv_cfg = dev->config;
     struct adc_sequence *as = &drv_data->as;
 
-    if (chan != SENSOR_CHAN_GAUGE_VOLTAGE && chan != SENSOR_CHAN_GAUGE_STATE_OF_CHARGE &&
-        chan != SENSOR_CHAN_ALL)
-    {
+    if (chan != SENSOR_CHAN_GAUGE_VOLTAGE && chan != SENSOR_CHAN_GAUGE_STATE_OF_CHARGE && chan != SENSOR_CHAN_ALL) {
         LOG_DBG("Selected channel is not supported: %d.", chan);
         return -ENOTSUP;
     }
 
     int32_t mv[BATT_SAMPLES];
 
-    for (int i = 0; i < BATT_SAMPLES; i++)
-    {
+    for (int i = 0; i < BATT_SAMPLES; i++) {
         int rc = adc_read(drv_data->adc, as);
         as->calibrate = false;
 
-        if (rc != 0)
-        {
+        if (rc != 0) {
             LOG_ERR("Failed to read ADC: %d", rc);
             return rc;
         }
@@ -81,25 +91,30 @@ static int bvdc_sample_fetch(const struct device *dev, enum sensor_channel chan)
     return 0;
 }
 
-static int bvdc_channel_get(const struct device *dev, enum sensor_channel chan,
-                            struct sensor_value *val)
-{
+
+/* ========================================================================= */
+/*                              SENSOR API                                   */
+/* ========================================================================= */
+static int bvdc_channel_get(const struct device *dev, enum sensor_channel chan, struct sensor_value *val) {
     struct bvdc_data *drv_data = dev->data;
     return battery_curve_channel_get(&drv_data->value, chan, val);
 }
+
 
 static const struct sensor_driver_api bvdc_api = {
     .sample_fetch = bvdc_sample_fetch,
     .channel_get = bvdc_channel_get,
 };
 
-static int bvdc_init(const struct device *dev)
-{
+
+/* ========================================================================= */
+/*                              INITIALIZATION                               */
+/* ========================================================================= */
+static int bvdc_init(const struct device *dev) {
     struct bvdc_data *drv_data = dev->data;
     const struct bvdc_config *drv_cfg = dev->config;
 
-    if (drv_data->adc == NULL)
-    {
+    if (drv_data->adc == NULL) {
         LOG_ERR("ADC failed to retrieve ADC driver");
         return -ENODEV;
     }
@@ -131,17 +146,18 @@ static int bvdc_init(const struct device *dev)
     return rc;
 }
 
-#define BVDC_INIT(n)                                                                       \
-    static struct bvdc_data bvdc_data_##n = {                                              \
-        .adc = DEVICE_DT_GET(DT_IO_CHANNELS_CTLR(DT_DRV_INST(n)))};                        \
-    static const struct bvdc_config bvdc_cfg_##n = {                                       \
-        .io_channel = {                                                                    \
-            DT_IO_CHANNELS_INPUT(DT_DRV_INST(n)),                                          \
-        },                                                                                 \
-        .output_ohm = DT_INST_PROP(n, output_ohms),                                        \
-        .full_ohm = DT_INST_PROP(n, full_ohms),                                            \
-    };                                                                                     \
-    DEVICE_DT_INST_DEFINE(n, &bvdc_init, NULL, &bvdc_data_##n, &bvdc_cfg_##n, POST_KERNEL, \
+
+#define BVDC_INIT(n)                                                                                                   \
+    static struct bvdc_data bvdc_data_##n = {.adc = DEVICE_DT_GET(DT_IO_CHANNELS_CTLR(DT_DRV_INST(n)))};               \
+    static const struct bvdc_config bvdc_cfg_##n = {                                                                   \
+        .io_channel =                                                                                                  \
+            {                                                                                                          \
+                DT_IO_CHANNELS_INPUT(DT_DRV_INST(n)),                                                                  \
+            },                                                                                                         \
+        .output_ohm = DT_INST_PROP(n, output_ohms),                                                                    \
+        .full_ohm = DT_INST_PROP(n, full_ohms),                                                                        \
+    };                                                                                                                 \
+    DEVICE_DT_INST_DEFINE(n, &bvdc_init, NULL, &bvdc_data_##n, &bvdc_cfg_##n, POST_KERNEL,                             \
                           CONFIG_SENSOR_INIT_PRIORITY, &bvdc_api);
 
 DT_INST_FOREACH_STATUS_OKAY(BVDC_INIT)
